@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>30명 6개조 학급 조 편성 및 모둠 관리 시스템</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f3ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Pretendard', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <!-- SheetJS (xlsx Export/Import) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        /* Print Specific Styles */
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+            }
+            .print-grid {
+                display: grid !important;
+                grid-template-columns: repeat(3, 1fr) !important;
+                gap: 1rem !important;
+            }
+            .print-card {
+                break-inside: avoid;
+                border: 1px solid #cbd5e1 !important;
+                box-shadow: none !important;
+            }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Card Hover Animations */
+        .group-card {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .group-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Slot Machine Shuffle Animation */
+        @keyframes pulseGlow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.02); }
+        }
+        .animate-pulse-glow {
+            animation: pulseGlow 0.8s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 flex flex-col antialiased">
+    <div id="app" class="flex-grow flex flex-col min-h-screen">
+
+        <!-- Toast Notification -->
+        <transition name="toast" enter-active-class="transition duration-300 ease-out" enter-from-class="transform translate-y-4 opacity-0" enter-to-class="transform translate-y-0 opacity-100" leave-active-class="transition duration-200 ease-in" leave-from-class="transform translate-y-0 opacity-100" leave-to-class="transform translate-y-4 opacity-0">
+            <div v-if="toast.show" 
+                 :class="[
+                    'fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-xl border text-sm font-bold flex items-center gap-3 no-print',
+                    toast.type === 'success' ? 'bg-emerald-900 text-emerald-100 border-emerald-700' :
+                    toast.type === 'warning' ? 'bg-amber-900 text-amber-100 border-amber-700' :
+                    'bg-slate-900 text-white border-slate-700'
+                 ]">
+                <i :class="[
+                    'fa-solid text-lg',
+                    toast.type === 'success' ? 'fa-circle-check text-emerald-400' :
+                    toast.type === 'warning' ? 'fa-triangle-exclamation text-amber-400' : 'fa-circle-info text-indigo-400'
+                ]"></i>
+                <span>{{ toast.message }}</span>
+            </div>
+        </transition>
+
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white shadow-lg no-print sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center text-amber-300 shadow-inner">
+                        <i class="fa-solid fa-users-rectangle text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-extrabold text-lg sm:text-xl tracking-tight flex items-center gap-2">
+                            학급 조 편성 스마트 도우미
+                            <span class="bg-indigo-500/40 text-indigo-200 border border-indigo-400/30 text-xs px-2.5 py-0.5 rounded-full font-medium">30명 · 6개조 전용</span>
+                        </h1>
+                        <p class="text-xs text-indigo-200/80">학생 명단 관리, 역할 지정, 조건별 자동 배정 및 Gemini AI 모둠 조력</p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="flex bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 text-xs sm:text-sm font-semibold">
+                    <button @click="activeTab = 'roster'" 
+                            :class="activeTab === 'roster' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'"
+                            class="px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-address-book"></i> 명단 관리 ({{ students.length }})
+                    </button>
+                    <button @click="activeTab = 'settings'" 
+                            :class="activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'"
+                            class="px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-sliders"></i> 조 조건 설정
+                    </button>
+                    <button @click="activeTab = 'results'" 
+                            :class="activeTab === 'results' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:text-white'"
+                            class="px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-cubes"></i> 조 편성 결과
+                    </button>
+                    <button @click="activeTab = 'ai'" 
+                            :class="activeTab === 'ai' ? 'bg-amber-400 text-slate-900 font-extrabold shadow-md' : 'text-amber-300 hover:text-amber-200'"
+                            class="px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i> AI 모둠 도우미
+                    </button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+            <!-- TAB 1: 학생 명단 관리 (Roster Management) -->
+            <section v-show="activeTab === 'roster'" class="space-y-6">
+                <!-- Roster Toolbar -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-user-group text-indigo-600"></i> 학생 명단 관리
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-1">총 <span class="font-bold text-indigo-600">{{ students.length }}명</span>의 학생이 등록되어 있습니다. (남성: {{ maleCount }}명, 여성: {{ femaleCount }}명, 임원/조장: {{ leaderCount }}명)</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <button @click="resetToDefault30" 
+                                class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-rotate-left"></i> 기본 30명 초기화
+                        </button>
+                        <button @click="showBulkInputModal = true" 
+                                class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-import"></i> 엑셀/일괄 텍스트 입력
+                        </button>
+                        <button @click="clearAllStudents" 
+                                class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-trash-can"></i> 전체 삭제
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Add Student Form -->
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80">
+                    <form @submit.prevent="addStudent" class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">번호</label>
+                            <input type="number" v-model.number="newStudent.id" required min="1" max="99"
+                                   class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div class="sm:col-span-4">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">학생 이름</label>
+                            <input type="text" v-model.trim="newStudent.name" placeholder="이름 입력 (예: 홍길동)" required
+                                   class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div class="sm:col-span-3">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">성별</label>
+                            <select v-model="newStudent.gender" 
+                                    class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                <option value="남">남성 (남)</option>
+                                <option value="여">여성 (여)</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-3 flex items-end gap-2 pt-2 sm:pt-0">
+                            <label class="inline-flex items-center gap-2 cursor-pointer bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 w-full justify-center">
+                                <input type="checkbox" v-model="newStudent.isLeader" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
+                                <span>조장 가능자</span>
+                            </label>
+                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition shadow-sm whitespace-nowrap">
+                                <i class="fa-solid fa-plus"></i> 추가
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Student List Grid -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3">
+                    <div v-for="(student, index) in students" :key="student.id" 
+                         class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition flex flex-col justify-between space-y-2 relative group">
+                        
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-extrabold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                                {{ student.id }}번
+                            </span>
+                            <span :class="student.gender === '남' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'"
+                                  class="text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                {{ student.gender }}
+                            </span>
+                        </div>
+
+                        <div class="text-center py-1">
+                            <div class="font-bold text-base text-slate-800 flex items-center justify-center gap-1">
+                                {{ student.name }}
+                                <i v-if="student.isLeader" class="fa-solid fa-crown text-amber-500 text-xs" title="조장 가능자"></i>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between pt-1 border-t border-slate-100">
+                            <button @click="toggleStudentLeader(index)" 
+                                    :class="student.isLeader ? 'text-amber-500 bg-amber-50' : 'text-slate-400 hover:text-slate-600'"
+                                    class="text-xs px-2 py-1 rounded-lg transition" title="조장 여부 토글">
+                                <i class="fa-solid fa-crown"></i>
+                            </button>
+                            <button @click="removeStudent(index)" 
+                                    class="text-rose-400 hover:text-rose-600 text-xs px-2 py-1 rounded-lg transition" title="학생 삭제">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: 조 조건 및 배정 설정 (Settings) -->
+            <section v-show="activeTab === 'settings'" class="space-y-6 max-w-4xl mx-auto">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+                    <div class="border-b border-slate-100 pb-4">
+                        <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-indigo-600"></i> 조 편성 조건 설정
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-1">원하는 조의 개수와 자동 배정 알고리즘 방식을 선택하세요.</p>
+                    </div>
+
+                    <!-- Number of Groups & Assignment Rules -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-3">
+                            <label class="block text-sm font-bold text-slate-700">생성할 조 수</label>
+                            <div class="flex items-center gap-3">
+                                <input type="range" v-model.number="numGroups" min="2" max="10" 
+                                       class="w-full accent-indigo-600 h-2 bg-slate-200 rounded-lg cursor-pointer">
+                                <span class="bg-indigo-600 text-white font-extrabold px-3 py-1 rounded-xl text-base min-w-[3.5rem] text-center shadow-sm">
+                                    {{ numGroups }}개 조
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-400">※ 30명 기준 6개조 선택 시 각 조당 5명씩 고르게 배정됩니다.</p>
+                        </div>
+
+                        <div class="space-y-3">
+                            <label class="block text-sm font-bold text-slate-700">배정 방식 선택</label>
+                            <div class="space-y-2">
+                                <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-indigo-300 bg-slate-50 cursor-pointer transition">
+                                    <input type="radio" v-model="assignmentStrategy" value="random" class="mt-1 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <div class="text-sm font-bold text-slate-800">완전 랜덤 무작위 배정</div>
+                                        <div class="text-xs text-slate-500">조건 없이 완전 무작위 추첨으로 편평하게 분배합니다.</div>
+                                    </div>
+                                </label>
+
+                                <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-indigo-300 bg-slate-50 cursor-pointer transition">
+                                    <input type="radio" v-model="assignmentStrategy" value="gender" class="mt-1 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <div class="text-sm font-bold text-slate-800">성별 균등 배정 (남/여 비율 준수)</div>
+                                        <div class="text-xs text-slate-500">남학생과 여학생을 각 조에 균등하게 먼저 나누어 배치합니다.</div>
+                                    </div>
+                                </label>
+
+                                <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-indigo-300 bg-slate-50 cursor-pointer transition">
+                                    <input type="radio" v-model="assignmentStrategy" value="leader" class="mt-1 text-indigo-600 focus:ring-indigo-500">
+                                    <div>
+                                        <div class="text-sm font-bold text-slate-800">조장/임원 우선 분배 배정</div>
+                                        <div class="text-xs text-slate-500">조장으로 지정된 학생을 각 조에 1명씩 우선 배치 후 나머지를 섞습니다.</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Group Naming Themes -->
+                    <div class="space-y-3 pt-4 border-t border-slate-100">
+                        <div class="flex items-center justify-between">
+                            <label class="block text-sm font-bold text-slate-700">조 이름 테마 선택</label>
+                            <button @click="activeTab = 'ai'" class="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1">
+                                <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i> AI에게 맞춤 조 이름 물어보기
+                            </button>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button v-for="theme in namingThemes" :key="theme.id"
+                                    @click="applyNamingTheme(theme)"
+                                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition">
+                                {{ theme.name }} ({{ theme.example }})
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Generate Action Button -->
+                    <div class="pt-4 text-center">
+                        <button @click="generateGroupsWithAnimation" :disabled="isAnimating"
+                                class="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-extrabold text-base px-8 py-3.5 rounded-2xl shadow-lg transition transform active:scale-95 disabled:opacity-50 flex items-center gap-3 mx-auto">
+                            <i class="fa-solid fa-shuffle text-amber-300 text-lg"></i>
+                            <span>신나는 조 편성 시작하기</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: 조 편성 결과 (Results View & Drag/Drop) -->
+            <section v-show="activeTab === 'results'" class="space-y-6">
+                <!-- Top Control Banner -->
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col sm:flex-row justify-between items-center gap-3 no-print">
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-cubes text-indigo-600"></i> 조 편성 결과
+                        </h2>
+                        <span class="text-xs text-slate-500">(총 {{ groups.length }}개 조 · {{ totalAssignedStudents }}명 배치 완료)</span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                        <button @click="generateGroupsWithAnimation" :disabled="isAnimating"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1.5">
+                            <i class="fa-solid fa-rotate text-xs"></i> 다시 섞기
+                        </button>
+                        <button @click="autoAssignAllRoles" 
+                                class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                                title="모든 조에 조장/부조장/활동기록/발표 담당을 자동 선정합니다">
+                            <i class="fa-solid fa-wand-magic-sparkles text-xs text-amber-600"></i> 역할 자동 지정
+                        </button>
+                        <button @click="copyResultsToClipboard" 
+                                class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
+                            <i class="fa-regular fa-copy"></i> 텍스트 복사
+                        </button>
+                        <button @click="exportToExcel" 
+                                class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-excel"></i> 엑셀 다운로드
+                        </button>
+                        <button @click="triggerPrint" 
+                                class="bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-print"></i> 발표/인쇄
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Animation Overlay / Slot Display -->
+                <div v-if="isAnimating" class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-12 rounded-3xl text-center space-y-4 shadow-2xl animate-pulse-glow">
+                    <div class="text-4xl text-amber-400">
+                        <i class="fa-solid fa-dice animate-spin"></i>
+                    </div>
+                    <div class="text-2xl font-extrabold tracking-wide">
+                        {{ animationText }}
+                    </div>
+                    <div class="text-sm text-indigo-200">
+                        학생들을 공정하게 분배하고 있습니다...
+                    </div>
+                </div>
+
+                <!-- Group Cards Grid -->
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 print-grid">
+                    <div v-for="(group, gIndex) in groups" :key="gIndex" 
+                         class="group-card bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 space-y-3 flex flex-col justify-between print-card">
+                        
+                        <!-- Group Card Header -->
+                        <div class="border-b border-slate-100 pb-3 flex justify-between items-center">
+                            <div class="flex items-center gap-2">
+                                <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center">
+                                    {{ gIndex + 1 }}
+                                </span>
+                                <input type="text" v-model="group.name" 
+                                       class="font-bold text-slate-800 text-base bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-400 rounded px-1.5 py-0.5 outline-none border-none">
+                            </div>
+                            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                                {{ group.students.length }}명
+                            </span>
+                        </div>
+
+                        <!-- Students List in Group -->
+                        <div class="space-y-2 flex-grow min-h-[140px]"
+                             @dragover.prevent
+                             @drop="onDropStudent($event, gIndex)">
+                            
+                            <div v-for="(st, sIndex) in group.students" :key="st.id"
+                                 draggable="true"
+                                 @dragstart="onDragStartStudent($event, gIndex, sIndex)"
+                                 class="p-2.5 rounded-xl bg-slate-50 hover:bg-indigo-50/50 border border-slate-200/60 transition flex items-center justify-between cursor-grab active:cursor-grabbing group/item">
+                                
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-slate-400 w-6">
+                                        {{ st.id }}
+                                    </span>
+                                    <span class="font-extrabold text-sm text-slate-800">
+                                        {{ st.name }}
+                                    </span>
+                                    <span :class="st.gender === '남' ? 'text-blue-600 bg-blue-50' : 'text-pink-600 bg-pink-50'"
+                                          class="text-[10px] font-bold px-1.5 py-0.2 rounded">
+                                        {{ st.gender }}
+                                    </span>
+                                </div>
+
+                                <!-- Role Selection Badge -->
+                                <div class="flex items-center gap-1">
+                                    <select v-model="st.role" 
+                                            :class="[
+                                                st.role === '조장' ? 'bg-amber-100 text-amber-800 font-bold border-amber-300' :
+                                                st.role === '부조장' ? 'bg-blue-100 text-blue-800 font-bold border-blue-300' :
+                                                st.role === '활동기록' ? 'bg-emerald-100 text-emerald-800 font-bold border-emerald-300' :
+                                                st.role === '발표' ? 'bg-purple-100 text-purple-800 font-bold border-purple-300' :
+                                                'bg-slate-100 text-slate-600 border-slate-200'
+                                            ]"
+                                            class="text-xs px-2 py-0.5 rounded-lg border outline-none cursor-pointer">
+                                        <option value="">역할 미지정</option>
+                                        <option value="조장">👑 조장</option>
+                                        <option value="부조장">⭐ 부조장</option>
+                                        <option value="활동기록">📝 활동기록</option>
+                                        <option value="발표">📣 발표담당</option>
+                                        <option value="도우미">🤝 나눔도우미</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div v-if="group.students.length === 0" class="h-28 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-xs text-slate-400">
+                                학생을 이곳으로 드래그하여 이동
+                            </div>
+                        </div>
+
+                        <!-- Card Footer Motto/Slogan -->
+                        <div v-if="group.motto" class="text-xs bg-amber-50/80 border border-amber-200/70 p-2 rounded-xl text-amber-900 font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-bullhorn text-amber-600"></i>
+                            <span class="truncate">구호: "{{ group.motto }}"</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: Gemini AI 모둠 도우미 (AI Assistant) -->
+            <section v-show="activeTab === 'ai'" class="space-y-6 max-w-4xl mx-auto no-print">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+                    <div class="border-b border-slate-100 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i> Gemini AI 모둠 도우미
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-1">수업 주제나 활동 목적을 입력하면 AI가 창의적인 조 이름, 구호, 아이스브레이킹 질문을 추천합니다.</p>
+                        </div>
+                        <span class="bg-amber-100 text-amber-800 border border-amber-300 text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1">
+                            <i class="fa-solid fa-bolt text-amber-600"></i> Google Gemini 3 Flash
+                        </span>
+                    </div>
+
+                    <!-- Mode Toggle Buttons -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button @click="aiSubTab = 'theme'" 
+                                :class="aiSubTab === 'theme' ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 font-bold ring-2 ring-indigo-500/20' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'"
+                                class="p-4 rounded-xl border text-left transition flex items-center justify-between">
+                            <div>
+                                <div class="text-sm">💡 AI 조 이름 & 구호 생성기</div>
+                                <div class="text-xs text-slate-500 font-normal mt-0.5">수업 주제 맞춤형 조 이름, 슬로건, 아이스브레이킹 생성</div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
+                        </button>
+                        <button @click="aiSubTab = 'guide'" 
+                                :class="aiSubTab === 'guide' ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 font-bold ring-2 ring-indigo-500/20' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'"
+                                class="p-4 rounded-xl border text-left transition flex items-center justify-between">
+                            <div>
+                                <div class="text-sm">🎯 AI 모둠 활동 & 피드백 가이드</div>
+                                <div class="text-xs text-slate-500 font-normal mt-0.5">선생님을 위한 모둠 협동 가이드 및 가이드라인 제시</div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
+                        </button>
+                    </div>
+
+                    <!-- AI SubTab 1: Group Names & Mottos -->
+                    <div v-if="aiSubTab === 'theme'" class="space-y-4">
+                        <div class="space-y-2">
+                            <label class="block text-sm font-bold text-slate-700">수업 / 프로젝트 활동 주제</label>
+                            <div class="flex gap-2">
+                                <input type="text" v-model="aiTopic" placeholder="예: 환경 보호 프로젝트, 우주 탐사 과학, 수학 문제 해결, 독서 토론 등" 
+                                       @keyup.enter="generateAiGroupThemes"
+                                       class="flex-grow bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                <button @click="generateAiGroupThemes" :disabled="aiLoading"
+                                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow transition flex items-center gap-2 disabled:opacity-50">
+                                    <i v-if="aiLoading" class="fa-solid fa-spinner animate-spin"></i>
+                                    <i v-else class="fa-solid fa-sparkles"></i>
+                                    <span>AI 생성</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Quick Keyword Chips -->
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <span class="text-slate-500 font-medium py-1">추천 주제:</span>
+                            <button v-for="keyword in ['환경과 에너지', '우주와 과학', '세계 문화 탐구', '협동 체육 대회', '사회 문제 해결']" :key="keyword"
+                                    @click="selectAiKeyword(keyword)"
+                                    class="bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200 transition">
+                                # {{ keyword }}
+                            </button>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div v-if="aiLoading" class="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                            <i class="fa-solid fa-wand-magic-sparkles text-3xl text-indigo-600 animate-bounce"></i>
+                            <p class="text-sm font-bold text-slate-700">Gemini AI가 멋진 조 이름과 구호를 생각하고 있습니다...</p>
+                            <p class="text-xs text-slate-400">잠시만 기다려 주세요 (약 2~4초 소요)</p>
+                        </div>
+
+                        <!-- Results List -->
+                        <div v-if="aiThemeResults.length > 0 && !aiLoading" class="space-y-4 pt-2">
+                            <div class="flex justify-between items-center">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                                    <i class="fa-solid fa-circle-check text-emerald-600"></i> AI 추천 결과 ({{ aiThemeResults.length }}개 조)
+                                </h3>
+                                <button @click="applyAiNamesToGroups" 
+                                        class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shadow-sm flex items-center gap-1">
+                                    <i class="fa-solid fa-file-import"></i> 조 이름에 바로 적용하기
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div v-for="(item, idx) in aiThemeResults" :key="idx" 
+                                     class="p-4 bg-gradient-to-br from-slate-50 to-indigo-50/40 rounded-xl border border-indigo-100 space-y-2">
+                                    <div class="flex justify-between items-center">
+                                        <span class="bg-indigo-600 text-white font-bold text-xs px-2.5 py-0.5 rounded-md">
+                                            {{ idx + 1 }}조: {{ item.groupName }}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-slate-700 font-semibold">
+                                        <span class="text-amber-600">📣 모둠 구호:</span> "{{ item.motto }}"
+                                    </p>
+                                    <p class="text-xs text-slate-500">
+                                        <span class="text-indigo-600 font-medium">💬 첫인사 Q:</span> {{ item.icebreaker }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI SubTab 2: Teacher Guide & Lesson Tips -->
+                    <div v-if="aiSubTab === 'guide'" class="space-y-4">
+                        <div class="space-y-2">
+                            <label class="block text-sm font-bold text-slate-700">모둠 활동 종류 또는 학급 분위기</label>
+                            <div class="flex gap-2">
+                                <input type="text" v-model="aiGuideTopic" placeholder="예: 첫 모둠 규칙 정하기, 소극적인 학생 참여 유도, 모둠별 발표 준비" 
+                                       @keyup.enter="generateAiGuide"
+                                       class="flex-grow bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                <button @click="generateAiGuide" :disabled="aiGuideLoading"
+                                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow transition flex items-center gap-2 disabled:opacity-50">
+                                    <i v-if="aiGuideLoading" class="fa-solid fa-spinner animate-spin"></i>
+                                    <i v-else class="fa-solid fa-lightbulb"></i>
+                                    <span>가이드 생성</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Guide Loading State -->
+                        <div v-if="aiGuideLoading" class="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                            <i class="fa-solid fa-brain text-3xl text-indigo-600 animate-pulse"></i>
+                            <p class="text-sm font-bold text-slate-700">선생님을 위한 모둠 가이드를 구성하고 있습니다...</p>
+                        </div>
+
+                        <!-- Guide Results Display -->
+                        <div v-if="aiGuideText && !aiGuideLoading" class="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                            <div class="font-bold text-indigo-700 border-b border-slate-200 pb-2 flex items-center gap-2">
+                                <i class="fa-solid fa-book-open"></i> AI 맞춤 모둠 지도 가이드
+                            </div>
+                            <div>{{ aiGuideText }}</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Modal: Bulk Text Input & File Upload -->
+        <div v-if="showBulkInputModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print">
+            <div class="bg-white rounded-3xl max-w-xl w-full p-6 space-y-5 shadow-2xl border border-slate-100">
+                <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv text-indigo-600"></i> 명단 일괄 등록
+                    </h3>
+                    <button @click="showBulkInputModal = false" class="text-slate-400 hover:text-slate-600 p-1">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">1. Excel / CSV 파일 불러오기</label>
+                        <input type="file" accept=".xlsx, .xls, .csv" @change="handleFileUpload"
+                               class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border border-slate-200 rounded-xl">
+                    </div>
+
+                    <div class="relative flex py-1 items-center">
+                        <div class="flex-grow border-t border-slate-200"></div>
+                        <span class="flex-shrink mx-3 text-xs text-slate-400 font-bold">또는</span>
+                        <div class="flex-grow border-t border-slate-200"></div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">2. 텍스트 직접 붙여넣기 (한 줄에 한 명씩)</label>
+                        <textarea v-model="bulkText" rows="6" placeholder="김철수, 남&#10;이영희, 여&#10;박민수, 남, 조장"
+                                  class="w-full bg-slate-50 border border-slate-300 rounded-2xl p-3 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
+                        <p class="text-[11px] text-slate-400 mt-1">※ '이름, 성별, 조장여부' 형식으로 입력하시면 더 정확하게 입력됩니다.</p>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button @click="showBulkInputModal = false" class="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+                        취소
+                    </button>
+                    <button @click="applyBulkInput" class="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow transition">
+                        명단에 적용
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const activeTab = ref('results');
+                const showBulkInputModal = ref(false);
+                const bulkText = ref('');
+
+                // Pre-populated 30 students default list
+                const defaultStudents = [
+                    { id: 1, name: '강민준', gender: '남', isLeader: true, role: '' },
+                    { id: 2, name: '김서연', gender: '여', isLeader: true, role: '' },
+                    { id: 3, name: '김도윤', gender: '남', isLeader: false, role: '' },
+                    { id: 4, name: '박지우', gender: '여', isLeader: true, role: '' },
+                    { id: 5, name: '이하은', gender: '여', isLeader: false, role: '' },
+                    { id: 6, name: '최준서', gender: '남', isLeader: false, role: '' },
+                    { id: 7, name: '정윤아', gender: '여', isLeader: false, role: '' },
+                    { id: 8, name: '한시우', gender: '남', isLeader: true, role: '' },
+                    { id: 9, name: '오지민', gender: '여', isLeader: false, role: '' },
+                    { id: 10, name: '임예준', gender: '남', isLeader: false, role: '' },
+                    { id: 11, name: '윤유진', gender: '여', isLeader: false, role: '' },
+                    { id: 12, name: '장건우', gender: '남', isLeader: true, role: '' },
+                    { id: 13, name: '신수아', gender: '여', isLeader: false, role: '' },
+                    { id: 14, name: '서현우', gender: '남', isLeader: false, role: '' },
+                    { id: 15, name: '권채원', gender: '여', isLeader: false, role: '' },
+                    { id: 16, name: '황민재', gender: '남', isLeader: false, role: '' },
+                    { id: 17, name: '송지아', gender: '여', isLeader: true, role: '' },
+                    { id: 18, name: '류성민', gender: '남', isLeader: false, role: '' },
+                    { id: 19, name: '전다은', gender: '여', isLeader: false, role: '' },
+                    { id: 20, name: '홍준혁', gender: '남', isLeader: false, role: '' },
+                    { id: 21, name: '고은지', gender: '여', isLeader: false, role: '' },
+                    { id: 22, name: '문태양', gender: '남', isLeader: false, role: '' },
+                    { id: 23, name: '양소율', gender: '여', isLeader: false, role: '' },
+                    { id: 24, name: '손우진', gender: '남', isLeader: false, role: '' },
+                    { id: 25, name: '배하윤', gender: '여', isLeader: false, role: '' },
+                    { id: 26, name: '백승현', gender: '남', isLeader: false, role: '' },
+                    { id: 27, name: '허예린', gender: '여', isLeader: false, role: '' },
+                    { id: 28, name: '남궁훈', gender: '남', isLeader: false, role: '' },
+                    { id: 29, name: '유아린', gender: '여', isLeader: false, role: '' },
+                    { id: 30, name: '조재윤', gender: '남', isLeader: false, role: '' }
+                ];
+
+                const students = ref([...defaultStudents]);
+
+                const newStudent = ref({
+                    id: 31,
+                    name: '',
+                    gender: '남',
+                    isLeader: false
+                });
+
+                // Group Settings State
+                const numGroups = ref(6);
+                const assignmentStrategy = ref('gender'); // 'random', 'gender', 'leader'
+                const isAnimating = ref(false);
+                const animationText = ref('조 편성 진행 중...');
+
+                // Formed Groups Data Structure
+                const groups = ref([]);
+
+                // Naming Themes Presets
+                const namingThemes = [
+                    { id: 'number', name: '숫자', example: '1조, 2조...' },
+                    { id: 'color', name: '무지개 색상', example: '빨강조, 주황조...' },
+                    { id: 'space', name: '우주 행성', example: '태양조, 지구조...' },
+                    { id: 'animal', name: '용맹한 동물', example: '사자조, 독수리조...' }
+                ];
+
+                // Toast Notification State
+                const toast = ref({
+                    show: false,
+                    message: '',
+                    type: 'info'
+                });
+
+                const toastMessage = (msg, type = 'info') => {
+                    toast.value.message = msg;
+                    toast.value.type = type;
+                    toast.value.show = true;
+                    setTimeout(() => {
+                        toast.value.show = false;
+                    }, 3000);
+                };
+
+                // Gemini AI State Variables
+                const aiSubTab = ref('theme');
+                const aiTopic = ref('창의 협동 프로젝트');
+                const aiLoading = ref(false);
+                const aiThemeResults = ref([]);
+                const aiGuideTopic = ref('첫 모둠 활동 아이스브레이킹 및 규칙 세우기');
+                const aiGuideLoading = ref(false);
+                const aiGuideText = ref('');
+
+                // Computed Roster Stats
+                const maleCount = computed(() => students.value.filter(s => s.gender === '남').length);
+                const femaleCount = computed(() => students.value.filter(s => s.gender === '여').length);
+                const leaderCount = computed(() => students.value.filter(s => s.isLeader).length);
+                const totalAssignedStudents = computed(() => groups.value.reduce((acc, g) => acc + g.students.length, 0));
+
+                // Helper for selecting keyword chip safely without inline syntax errors
+                const selectAiKeyword = (keyword) => {
+                    aiTopic.value = keyword;
+                    generateAiGroupThemes();
+                };
+
+                // Reset To Default 30 Students
+                const resetToDefault30 = () => {
+                    students.value = JSON.parse(JSON.stringify(defaultStudents));
+                    newStudent.value.id = 31;
+                    toastMessage('30명 기본 학생 명단으로 초기화되었습니다.', 'success');
+                };
+
+                const clearAllStudents = () => {
+                    students.value = [];
+                    newStudent.value.id = 1;
+                    toastMessage('모든 학생 명단이 삭제되었습니다.', 'warning');
+                };
+
+                const addStudent = () => {
+                    if (!newStudent.value.name) return;
+                    students.value.push({
+                        id: newStudent.value.id,
+                        name: newStudent.value.name,
+                        gender: newStudent.value.gender,
+                        isLeader: newStudent.value.isLeader,
+                        role: ''
+                    });
+                    newStudent.value.id += 1;
+                    newStudent.value.name = '';
+                    newStudent.value.isLeader = false;
+                    toastMessage('학생이 추가되었습니다.', 'success');
+                };
+
+                const removeStudent = (idx) => {
+                    students.value.splice(idx, 1);
+                };
+
+                const toggleStudentLeader = (idx) => {
+                    students.value[idx].isLeader = !students.value[idx].isLeader;
+                };
+
+                // Apply Naming Themes
+                const applyNamingTheme = (theme) => {
+                    const themesMap = {
+                        number: Array.from({ length: 10 }, (_, i) => `${i + 1}조`),
+                        color: ['빨강조', '주황조', '노랑조', '초록조', '파랑조', '보라조', '분홍조', '하늘조', '연두조', '하얀조'],
+                        space: ['태양조', '지구조', '달조', '화성조', '목성조', '토성조', '금성조', '수성조', '은하조', '혜성조'],
+                        animal: ['사자조', '호랑이조', '독수리조', '돌고래조', '북극곰조', '치타조', '올빼미조', '수달조', '표범조', '너구리조']
+                    };
+                    const list = themesMap[theme.id] || themesMap.number;
+                    groups.value.forEach((g, idx) => {
+                        g.name = list[idx] || `${idx + 1}조`;
+                    });
+                    toastMessage(`'${theme.name}' 테마 이름이 적용되었습니다.`, 'success');
+                };
+
+                // Core Group Formation Logic
+                const shuffleArray = (arr) => {
+                    const result = [...arr];
+                    for (let i = result.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [result[i], result[j]] = [result[j], result[i]];
+                    }
+                    return result;
+                };
+
+                const buildGroups = () => {
+                    const count = numGroups.value;
+                    const resultGroups = Array.from({ length: count }, (_, i) => ({
+                        name: `${i + 1}조`,
+                        motto: '',
+                        students: []
+                    }));
+
+                    if (students.value.length === 0) return resultGroups;
+
+                    let copy = JSON.parse(JSON.stringify(students.value));
+                    copy.forEach(s => s.role = ''); // Reset roles
+
+                    if (assignmentStrategy.value === 'gender') {
+                        const males = shuffleArray(copy.filter(s => s.gender === '남'));
+                        const females = shuffleArray(copy.filter(s => s.gender === '여'));
+
+                        males.forEach((st, idx) => {
+                            resultGroups[idx % count].students.push(st);
+                        });
+                        females.forEach((st, idx) => {
+                            resultGroups[(males.length + idx) % count].students.push(st);
+                        });
+                    } else if (assignmentStrategy.value === 'leader') {
+                        const leaders = shuffleArray(copy.filter(s => s.isLeader));
+                        const nonLeaders = shuffleArray(copy.filter(s => !s.isLeader));
+
+                        leaders.forEach((st, idx) => {
+                            resultGroups[idx % count].students.push(st);
+                        });
+                        nonLeaders.forEach((st, idx) => {
+                            resultGroups[(leaders.length + idx) % count].students.push(st);
+                        });
+                    } else {
+                        // Fully Random
+                        const shuffled = shuffleArray(copy);
+                        shuffled.forEach((st, idx) => {
+                            resultGroups[idx % count].students.push(st);
+                        });
+                    }
+
+                    return resultGroups;
+                };
+
+                // Trigger Animated Group Shuffle
+                const generateGroupsWithAnimation = () => {
+                    if (students.value.length === 0) {
+                        toastMessage('학생 명단이 비어있습니다. 학생을 등록해주세요.', 'warning');
+                        return;
+                    }
+
+                    isAnimating.value = true;
+                    activeTab.value = 'results';
+
+                    const phrases = ['조원을 섞는 중...', '공정하게 배치하는 중...', '역할 조건 확인 중...', '최적의 모둠 완성 중!'];
+                    let step = 0;
+
+                    const interval = setInterval(() => {
+                        animationText.value = phrases[step % phrases.length];
+                        step++;
+                    }, 250);
+
+                    setTimeout(() => {
+                        clearInterval(interval);
+                        groups.value = buildGroups();
+                        isAnimating.value = false;
+                        
+                        // Fire Confetti
+                        if (typeof confetti === 'function') {
+                            confetti({
+                                particleCount: 70,
+                                spread: 60,
+                                origin: { y: 0.6 }
+                            });
+                        }
+                        toastMessage('조 편성이 성공적으로 완료되었습니다!', 'success');
+                    }, 1200);
+                };
+
+                // Auto Assign Roles (Leader, Co-Leader, Recorder, Presenter)
+                const autoAssignAllRoles = () => {
+                    const roles = ['조장', '부조장', '활동기록', '발표', '도우미'];
+                    groups.value.forEach(group => {
+                        group.students.forEach((st, idx) => {
+                            st.role = roles[idx] || '도우미';
+                        });
+                    });
+                    toastMessage('모든 조에 역할이 자동으로 배정되었습니다.', 'success');
+                };
+
+                // Drag and Drop Student Movement
+                const draggedItem = ref(null);
+
+                const onDragStartStudent = (event, gIndex, sIndex) => {
+                    draggedItem.value = { gIndex, sIndex };
+                    event.dataTransfer.effectAllowed = 'move';
+                };
+
+                const onDropStudent = (event, targetGIndex) => {
+                    if (!draggedItem.value) return;
+                    const { gIndex: srcGIndex, sIndex: srcSIndex } = draggedItem.value;
+
+                    if (srcGIndex === targetGIndex) return;
+
+                    const student = groups.value[srcGIndex].students.splice(srcSIndex, 1)[0];
+                    groups.value[targetGIndex].students.push(student);
+
+                    draggedItem.value = null;
+                    toastMessage(`${student.name} 학생이 이동되었습니다.`, 'info');
+                };
+
+                // Export & Copy Helpers
+                const copyResultsToClipboard = () => {
+                    if (groups.value.length === 0) return;
+                    let text = `[학급 조 편성 결과]\n\n`;
+                    groups.value.forEach((g, idx) => {
+                        text += `📌 ${g.name} (${g.students.length}명)\n`;
+                        g.students.forEach(s => {
+                            text += `- ${s.id}번 ${s.name} (${s.gender})${s.role ? ' [' + s.role + ']' : ''}\n`;
+                        });
+                        text += `\n`;
+                    });
+
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    toastMessage('클립보드에 결과가 복사되었습니다! (카톡/밴드에 붙여넣기 가능)', 'success');
+                };
+
+                const exportToExcel = () => {
+                    if (typeof XLSX === 'undefined') {
+                        toastMessage('엑셀 라이브러리를 로드 중입니다. 잠시 후 시도해주세요.', 'warning');
+                        return;
+                    }
+
+                    const rows = [];
+                    groups.value.forEach(g => {
+                        g.students.forEach(s => {
+                            rows.push({
+                                '조 이름': g.name,
+                                '번호': s.id,
+                                '이름': s.name,
+                                '성별': s.gender,
+                                '역할': s.role || '팀원'
+                            });
+                        });
+                    });
+
+                    const worksheet = XLSX.utils.json_to_sheet(rows);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, '조편성결과');
+                    XLSX.writeFile(workbook, '학급_조편성_결과.xlsx');
+
+                    toastMessage('엑셀 파일 다운로드가 시작되었습니다.', 'success');
+                };
+
+                const triggerPrint = () => {
+                    window.print();
+                };
+
+                // Bulk Input & Excel Import Handler
+                const applyBulkInput = () => {
+                    if (!bulkText.value.trim()) return;
+
+                    const lines = bulkText.value.split('\n');
+                    const newStudentsList = [];
+                    let idCounter = 1;
+
+                    lines.forEach(line => {
+                        const trimmed = line.trim();
+                        if (!trimmed) return;
+                        const parts = trimmed.split(/[,;\t]/).map(p => p.trim());
+
+                        const name = parts[0] || `학생${idCounter}`;
+                        const gender = (parts[1] && (parts[1] === '여' || parts[1] === '여자')) ? '여' : '남';
+                        const isLeader = parts[2] ? parts[2].includes('조장') || parts[2].includes('임원') : false;
+
+                        newStudentsList.push({
+                            id: idCounter++,
+                            name,
+                            gender,
+                            isLeader,
+                            role: ''
+                        });
+                    });
+
+                    if (newStudentsList.length > 0) {
+                        students.value = newStudentsList;
+                        showBulkInputModal.value = false;
+                        bulkText.value = '';
+                        toastMessage(`${newStudentsList.length}명의 학생 명단이 새로 등록되었습니다.`, 'success');
+                    }
+                };
+
+                const handleFileUpload = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const data = new Uint8Array(evt.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                        const imported = [];
+                        let idCounter = 1;
+
+                        json.forEach((row, idx) => {
+                            if (idx === 0 && (row[0] === '이름' || row[0] === '번호')) return; // Skip Header
+                            if (!row[0] && !row[1]) return;
+
+                            const name = row[1] || row[0];
+                            const gender = (row[2] && String(row[2]).includes('여')) ? '여' : '남';
+
+                            imported.push({
+                                id: idCounter++,
+                                name: String(name).trim(),
+                                gender,
+                                isLeader: false,
+                                role: ''
+                            });
+                        });
+
+                        if (imported.length > 0) {
+                            students.value = imported;
+                            showBulkInputModal.value = false;
+                            toastMessage(`엑셀에서 ${imported.length}명의 명단을 성공적으로 불러왔습니다.`, 'success');
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                };
+
+                const fetchGeminiWithRetry = async (apiUrl, payload, maxRetries = 3) => {
+                    let delay = 1000;
+                    for (let i = 0; i < maxRetries; i++) {
+                        try {
+                            const res = await fetch(apiUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            if (res.ok) return await res.json();
+                        } catch (e) {
+                            // Exponential Backoff Delay
+                        }
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2;
+                    }
+                    throw new Error('Gemini API 호출에 실패했습니다.');
+                };
+
+                // Gemini API Call 1: Generate Group Themes, Mottos & Icebreakers
+                const generateAiGroupThemes = async () => {
+                    if (!aiTopic.value.trim()) {
+                        toastMessage('수업 주제나 키워드를 입력해주세요!', 'warning');
+                        return;
+                    }
+
+                    aiLoading.value = true;
+                    try {
+                        const count = numGroups.value || 6;
+                        const apiKey = "";
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+                        const systemPrompt = `당신은 초·중·고등학교 학급 모둠 활동을 도와주는 창의적인 교육 AI 보조 교사입니다. 입력된 활동 주제에 맞추어 ${count}개 모둠의 기발한 모둠 이름, 활기찬 모둠 구호(슬로건), 친근한 첫인사 아이스브레이킹 질문을 JSON으로 응답해주세요.`;
+                        const userQuery = `주제: "${aiTopic.value}"\n모둠 수: ${count}개\n각 모둠별로 긍정적이고 한국 학생들에게 친근한 모둠 이름, 짧고 명쾌한 구호, 팀원들이 이야기 나눌 수 있는 재미있는 질문을 만들어주세요.`;
+
+                        const payload = {
+                            contents: [{ parts: [{ text: userQuery }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] },
+                            generationConfig: {
+                                responseMimeType: "application/json",
+                                responseSchema: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        groups: {
+                                            type: "ARRAY",
+                                            items: {
+                                                type: "OBJECT",
+                                                properties: {
+                                                    groupName: { type: "STRING" },
+                                                    motto: { type: "STRING" },
+                                                    icebreaker: { type: "STRING" }
+                                                },
+                                                required: ["groupName", "motto", "icebreaker"]
+                                            }
+                                        }
+                                    },
+                                    required: ["groups"]
+                                }
+                            }
+                        };
+
+                        const data = await fetchGeminiWithRetry(apiUrl, payload);
+                        const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (jsonText) {
+                            const parsed = JSON.parse(jsonText);
+                            aiThemeResults.value = parsed.groups || [];
+                            toastMessage('AI 모둠 이름과 구호가 성공적으로 생성되었습니다!', 'success');
+                        } else {
+                            toastMessage('AI 응답 처리 중 오류가 발생했습니다.', 'warning');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        toastMessage('AI 호출 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 'warning');
+                    } finally {
+                        aiLoading.value = false;
+                    }
+                };
+
+                // Apply AI Group Names to current custom names & groups
+                const applyAiNamesToGroups = () => {
+                    if (aiThemeResults.value.length === 0) return;
+                    aiThemeResults.value.forEach((item, idx) => {
+                        if (groups.value[idx]) {
+                            groups.value[idx].name = `${idx + 1}조 (${item.groupName})`;
+                            groups.value[idx].motto = item.motto;
+                        }
+                    });
+                    activeTab.value = 'results';
+                    toastMessage('AI 조 이름과 구호가 현재 조에 적용되었습니다!', 'success');
+                };
+
+                // Gemini API Call 2: Generate Teacher Guide
+                const generateAiGuide = async () => {
+                    if (!aiGuideTopic.value.trim()) {
+                        toastMessage('모둠 활동 가이드 주제를 입력해주세요!', 'warning');
+                        return;
+                    }
+
+                    aiGuideLoading.value = true;
+                    try {
+                        const apiKey = "";
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+                        const systemPrompt = "당신은 베테랑 학급 경영 교사입니다. 교사를 위한 30초 요약 모둠 활동 지도 가이드라인을 3~4개 항목으로 쉽고 명확하게 작성해 주세요.";
+                        const userQuery = `주제: "${aiGuideTopic.value}"\n학급 수: 30명 (6개 모둠 기준)\n교사가 모둠 활동을 원활하게 진행하기 위한 (1) 역할 분담 팁, (2) 5분 아이스브레이킹 게임 추천, (3) 협동 규칙 및 칭찬 노하우를 포함해 작성해 주세요.`;
+
+                        const payload = {
+                            contents: [{ parts: [{ text: userQuery }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] }
+                        };
+
+                        const data = await fetchGeminiWithRetry(apiUrl, payload);
+                        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            aiGuideText.value = text;
+                            toastMessage('모둠 활동 지도 가이드가 준비되었습니다.', 'success');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        toastMessage('AI 가이드 생성 중 오류가 발생했습니다.', 'warning');
+                    } finally {
+                        aiGuideLoading.value = false;
+                    }
+                };
+
+                // Initialize default 6 groups on mount
+                onMounted(() => {
+                    groups.value = buildGroups();
+                });
+
+                return {
+                    activeTab,
+                    students,
+                    newStudent,
+                    resetToDefault30,
+                    clearAllStudents,
+                    addStudent,
+                    removeStudent,
+                    toggleStudentLeader,
+                    numGroups,
+                    assignmentStrategy,
+                    isAnimating,
+                    animationText,
+                    groups,
+                    namingThemes,
+                    applyNamingTheme,
+                    generateGroupsWithAnimation,
+                    autoAssignAllRoles,
+                    onDragStartStudent,
+                    onDropStudent,
+                    copyResultsToClipboard,
+                    exportToExcel,
+                    triggerPrint,
+                    showBulkInputModal,
+                    bulkText,
+                    applyBulkInput,
+                    handleFileUpload,
+                    toast,
+                    maleCount,
+                    femaleCount,
+                    leaderCount,
+                    totalAssignedStudents,
+                    // AI Features Exports
+                    aiSubTab,
+                    aiTopic,
+                    aiLoading,
+                    aiThemeResults,
+                    aiGuideTopic,
+                    aiGuideLoading,
+                    aiGuideText,
+                    selectAiKeyword,
+                    generateAiGroupThemes,
+                    applyAiNamesToGroups,
+                    generateAiGuide
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
